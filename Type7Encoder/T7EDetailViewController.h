@@ -3,15 +3,21 @@
 //  Type7Encoder
 //
 //  Created by Phillip Dieppa on 12/2/11.
-//  Copyright (c) 2011 WO1. All rights reserved.
+//  Copyright (c) 2011 Phillip Dieppa. All rights reserved.
 //
 
 #import <UIKit/UIKit.h>
+#import "Device.h"
 
-@interface T7EDetailViewController : UIViewController <UISplitViewControllerDelegate>
+@interface T7EDetailViewController : UITableViewController <NSFetchedResultsControllerDelegate, UITableViewDelegate, UIGestureRecognizerDelegate> {
+    UITableViewCell *tvCell;
+}
 
-@property (strong, nonatomic) id detailItem;
+@property (nonatomic, assign) IBOutlet UITableViewCell *tvCell;
+@property (strong, nonatomic) NSFetchedResultsController *fetchedResultsController;
+@property (strong, nonatomic) Device *device;
 
-@property (strong, nonatomic) IBOutlet UILabel *detailDescriptionLabel;
-
+-(void)configureCell:(UITableViewCell *)cell atIndexPath:(NSIndexPath *)indexPath;
+-(void)setupNavBar;
+-(void)addNewPassword;
 @end

@@ -3,7 +3,7 @@
 //  Type7Encoder
 //
 //  Created by Phillip Dieppa on 12/2/11.
-//  Copyright (c) 2011 WO1. All rights reserved.
+//  Copyright (c) 2011 Phillip Dieppa. All rights reserved.
 //
 
 #import "T7EAppDelegate.h"
@@ -11,6 +11,9 @@
 #import "T7EMasterViewController.h"
 
 #import "T7EDetailViewController.h"
+
+#import "PasswordViewController.h"
+
 
 @implementation T7EAppDelegate
 
@@ -20,29 +23,38 @@
 @synthesize persistentStoreCoordinator = __persistentStoreCoordinator;
 @synthesize navigationController = _navigationController;
 @synthesize splitViewController = _splitViewController;
+@synthesize saveTimer;
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions
 {
+    [[NSNotificationCenter defaultCenter] addObserver:[ActionClass class] selector:@selector(startSaveTimer) name:NSManagedObjectContextObjectsDidChangeNotification object:nil];
+    
+    [ActionClass deleteOrphanPasswords];
     self.window = [[UIWindow alloc] initWithFrame:[[UIScreen mainScreen] bounds]];
     // Override point for customization after application launch.
     if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPhone) {
-        T7EMasterViewController *masterViewController = [[T7EMasterViewController alloc] initWithNibName:@"T7EMasterViewController_iPhone" bundle:nil];
+        
+        T7EMasterViewController *masterViewController = [[T7EMasterViewController alloc] init];
         self.navigationController = [[UINavigationController alloc] initWithRootViewController:masterViewController];
+        [self.navigationController.navigationBar setTintColor:color2];
         self.window.rootViewController = self.navigationController;
         masterViewController.managedObjectContext = self.managedObjectContext;
     } else {
-        T7EMasterViewController *masterViewController = [[T7EMasterViewController alloc] initWithNibName:@"T7EMasterViewController_iPad" bundle:nil];
+        T7EMasterViewController *masterViewController = [[T7EMasterViewController alloc] init];
         UINavigationController *masterNavigationController = [[UINavigationController alloc] initWithRootViewController:masterViewController];
+        [masterNavigationController.navigationBar setTintColor:color2];
         
-        T7EDetailViewController *detailViewController = [[T7EDetailViewController alloc] initWithNibName:@"T7EDetailViewController_iPad" bundle:nil];
-        UINavigationController *detailNavigationController = [[UINavigationController alloc] initWithRootViewController:detailViewController];
-    	
+        
+        PasswordViewController *passwordViewController = [[PasswordViewController alloc] init];
+        UINavigationController *detailNavigationController = [[UINavigationController alloc] initWithRootViewController:passwordViewController];
+        [detailNavigationController.navigationBar setTintColor:color2];
+        
         self.splitViewController = [[UISplitViewController alloc] init];
-        self.splitViewController.delegate = detailViewController;
+        self.splitViewController.delegate = passwordViewController;
         self.splitViewController.viewControllers = [NSArray arrayWithObjects:masterNavigationController, detailNavigationController, nil];
         
         self.window.rootViewController = self.splitViewController;
-        masterViewController.detailViewController = detailViewController;
+        masterViewController.detailViewController = passwordViewController;
         masterViewController.managedObjectContext = self.managedObjectContext;
     }
     [self.window makeKeyAndVisible];
@@ -55,6 +67,8 @@
      Sent when the application is about to move from active to inactive state. This can occur for certain types of temporary interruptions (such as an incoming phone call or SMS message) or when the user quits the application and it begins the transition to the background state.
      Use this method to pause ongoing tasks, disable timers, and throttle down OpenGL ES frame rates. Games should use this method to pause the game.
      */
+    [ActionClass saveContext:self.managedObjectContext exclusive:YES];
+    [ActionClass collapseAllPasswords:nil];
 }
 
 - (void)applicationDidEnterBackground:(UIApplication *)application
@@ -63,6 +77,8 @@
      Use this method to release shared resources, save user data, invalidate timers, and store enough application state information to restore your application to its current state in case it is terminated later. 
      If your application supports background execution, this method is called instead of applicationWillTerminate: when the user quits.
      */
+
+    [ActionClass saveContext:self.managedObjectContext exclusive:YES];
 }
 
 - (void)applicationWillEnterForeground:(UIApplication *)application
@@ -82,26 +98,7 @@
 - (void)applicationWillTerminate:(UIApplication *)application
 {
     // Saves changes in the application's managed object context before the application terminates.
-    [self saveContext];
-}
-
-- (void)saveContext
-{
-    NSError *error = nil;
-    NSManagedObjectContext *managedObjectContext = self.managedObjectContext;
-    if (managedObjectContext != nil)
-    {
-        if ([managedObjectContext hasChanges] && ![managedObjectContext save:&error])
-        {
-            /*
-             Replace this implementation with code to handle the error appropriately.
-             
-             abort() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development. 
-             */
-            NSLog(@"Unresolved error %@, %@", error, [error userInfo]);
-            abort();
-        } 
-    }
+    [ActionClass saveContext:self.managedObjectContext exclusive:YES];
 }
 
 #pragma mark - Core Data stack
@@ -145,6 +142,8 @@
  Returns the persistent store coordinator for the application.
  If the coordinator doesn't already exist, it is created and the application's store added to it.
  */
+
+
 - (NSPersistentStoreCoordinator *)persistentStoreCoordinator
 {
     if (__persistentStoreCoordinator != nil)
@@ -152,38 +151,21 @@
         return __persistentStoreCoordinator;
     }
     
-    NSURL *storeURL = [[self applicationDocumentsDirectory] URLByAppendingPathComponent:@"Type7Encoder.sqlite"];
-    
-    NSError *error = nil;
     __persistentStoreCoordinator = [[NSPersistentStoreCoordinator alloc] initWithManagedObjectModel:[self managedObjectModel]];
-    if (![__persistentStoreCoordinator addPersistentStoreWithType:NSSQLiteStoreType configuration:nil URL:storeURL options:nil error:&error])
+    
+    NSPersistentStoreCoordinator *psc = __persistentStoreCoordinator;
+    NSString *SQLiteFilename = [NSString stringWithFormat:@"Type7Encoder.sqlite"];
+    NSString *storePath = [[self applicationDocumentsDirectory] stringByAppendingPathComponent:SQLiteFilename];
+    NSURL *storeURL = [NSURL fileURLWithPath:storePath];
+    NSDictionary *options = [NSDictionary dictionaryWithObjectsAndKeys:[NSNumber numberWithBool:YES], NSMigratePersistentStoresAutomaticallyOption, [NSNumber numberWithBool:YES], NSInferMappingModelAutomaticallyOption, nil];
+    NSError *error = nil;
+    if (![psc addPersistentStoreWithType:NSSQLiteStoreType configuration:nil URL:storeURL options:options error:&error])
     {
-        /*
-         Replace this implementation with code to handle the error appropriately.
-         
-         abort() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development. 
-         
-         Typical reasons for an error here include:
-         * The persistent store is not accessible;
-         * The schema for the persistent store is incompatible with current managed object model.
-         Check the error message to determine what the actual problem was.
-         
-         
-         If the persistent store is not accessible, there is typically something wrong with the file path. Often, a file URL is pointing into the application's resources directory instead of a writeable directory.
-         
-         If you encounter schema incompatibility errors during development, you can reduce their frequency by:
-         * Simply deleting the existing store:
-         [[NSFileManager defaultManager] removeItemAtURL:storeURL error:nil]
-         
-         * Performing automatic lightweight migration by passing the following dictionary as the options parameter: 
-         [NSDictionary dictionaryWithObjectsAndKeys:[NSNumber numberWithBool:YES], NSMigratePersistentStoresAutomaticallyOption, [NSNumber numberWithBool:YES], NSInferMappingModelAutomaticallyOption, nil];
-         
-         Lightweight migration will only work for a limited set of schema changes; consult "Core Data Model Versioning and Data Migration Programming Guide" for details.
-         
-         */
         NSLog(@"Unresolved error %@, %@", error, [error userInfo]);
-        abort();
-    }    
+        //[ActionClass showCoreDataError];
+    } else {
+        NSLog(@"Added a locally significant persistent store!");
+    }  
     
     return __persistentStoreCoordinator;
 }
@@ -193,9 +175,8 @@
 /**
  Returns the URL to the application's Documents directory.
  */
-- (NSURL *)applicationDocumentsDirectory
-{
-    return [[[NSFileManager defaultManager] URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask] lastObject];
+- (NSString *)applicationDocumentsDirectory {
+	return [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) lastObject];
 }
 
 @end

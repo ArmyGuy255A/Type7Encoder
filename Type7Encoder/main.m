@@ -3,7 +3,7 @@
 //  Type7Encoder
 //
 //  Created by Phillip Dieppa on 12/2/11.
-//  Copyright (c) 2011 WO1. All rights reserved.
+//  Copyright (c) 2011 Phillip Dieppa. All rights reserved.
 //
 
 #import <UIKit/UIKit.h>
